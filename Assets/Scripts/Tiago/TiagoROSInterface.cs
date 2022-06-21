@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using Unity.Robotics.ROSTCPConnector;
+using Unity.Robotics.UrdfImporter;
 
 using RosMessageTypes.TiagoUnity;
 using RosMessageTypes.MoveBase;
@@ -109,7 +110,7 @@ public class TiagoROSInterface : MonoBehaviour
         // Initialize robot controller
         controller = gameObject.AddComponent<TiagoController>();
         yield return new WaitForSeconds(1.0f);
-        controller.Initialize(tiago, baseLink, maxLinearSpeed, maxRotationalSpeed, steps);
+        controller.Initialize(tiago, baseLink, maxLinearSpeed, maxRotationalSpeed, steps, spawnPosition);
 
         // Initialize laser Sensor
         //lidarSensor = laser.AddComponent<LidarSensor>();
@@ -166,11 +167,11 @@ public class TiagoROSInterface : MonoBehaviour
 
     public void GetNavigationPlan()
     {
-        foreach(GameObject go in trajectory)
+        /*foreach(GameObject go in trajectory)
         {
             Destroy(go);
         }
-        trajectory.Clear();
+        trajectory.Clear();*/
 
         var basePose = new PoseStamped
         {
@@ -229,44 +230,66 @@ public class TiagoROSInterface : MonoBehaviour
             (float)response.base_link_pose.position.z).From<FLU>();
         baseRot = response.base_link_pose.orientation.From<FLU>();
 
-        relPosition = basePos - initPos;
-        relRotation = Quaternion.Inverse(baseRot) * initRot;
-        controller.TeleportRobot(relPosition, relRotation);
+        //relPosition = basePos - initPos;
+        //relRotation = Quaternion.Inverse(baseRot) * initRot;
+        //controller.TeleportRobotRelative(relPosition, relRotation);
 
-        initPos = new Vector3(basePos.x, basePos.y, basePos.z);
+        //initPos = new Vector3(basePos.x, basePos.y, basePos.z);
         initRot = new Quaternion(baseRot.x, baseRot.y, baseRot.z, baseRot.w);
 
-        foreach (GameObject go in trajectory)
+        /*foreach (GameObject go in trajectory)
         {
             Destroy(go);
         }
-        trajectory.Clear();
-
-        navTarget1.transform.localPosition = new Vector3(0, 0, 0.5f);
+        trajectory.Clear();*/
     }
 
     public void NavServiceResponse(NavSrvResponse response)
     {
         if (response.plan.poses.Length > 0)
         {
+            navTarget1.SetActive(false);
+            StartCoroutine(PathHoloNavigationRoutine(response));
+        }
+        else
+            Debug.Log("No plan found!");
+    }
+
+    private IEnumerator PathHoloNavigationRoutine(NavSrvResponse response)
+    {
+        tiago.GetComponent<UrdfRobot>().SetRigidbodiesUseGravity();
+
+        var initPos = baseLink.transform.position;
+        var initRot = baseLink.transform.rotation;
+        for (int t=0; t < 3; t++)
+        {
             int i = 0;
             foreach (PoseStamped ps in response.plan.poses)
             {
-                if (i % 3 == 0 && i != response.plan.poses.Length - 1)
+                if (i % 2 == 0 && i != response.plan.poses.Length - 1)
                 {
                     var position = new RosMessageTypes.Geometry.Point32Msg((float)ps.pose.position.x, (float)ps.pose.position.y, (float)ps.pose.position.z).From<FLU>();
+                    var orientation = ps.pose.orientation.From<FLU>();
 
-                    var newGo = Instantiate(prefab, Vector3.zero, Quaternion.identity);
-                    newGo.transform.parent = baseLink.transform;
+                    var newPos = initRot * Quaternion.Inverse(baseRot) * (position - basePos) + initPos + Vector3.up * 0.1f;
+                    var newRot = initRot * Quaternion.Inverse(baseRot) * orientation;
+                    controller.TeleportRobot(newPos, newRot);
 
-                    newGo.transform.localPosition = Vector3.up * 0.1f + Quaternion.Inverse(baseRot) * (position - basePos);
-                    trajectory.Add(newGo);
+                    yield return new WaitForSeconds(0.1f);
+
+                    //var newGo = Instantiate(prefab, Vector3.zero, Quaternion.identity);
+                    //newGo.transform.parent = baseLink.transform;
+
+                    //newGo.transform.localPosition = Vector3.up * 0.1f + Quaternion.Inverse(baseRot) * (position - basePos);
+                    //trajectory.Add(newGo);
                 }
                 i++;
             }
         }
-        else
-            Debug.Log("No plan found!");
+        tiago.GetComponent<UrdfRobot>().SetRigidbodiesUseGravity();
+
+        navTarget1.SetActive(true);
+        navTarget1.transform.localPosition = new Vector3(0, 0, 0.5f);
     }
 
     public void NavTargetCallback(MoveBaseActionResultMsg msg)
@@ -275,7 +298,6 @@ public class TiagoROSInterface : MonoBehaviour
 
         var request = new PoseServiceRequest();
         ros.SendServiceMessage<PoseServiceResponse>(baseLinkPoseService, request, UpdateRobotPoseCallback);
-
     }
 
     /*public void PublishNavigationTarget()

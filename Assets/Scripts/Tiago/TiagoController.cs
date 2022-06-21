@@ -14,6 +14,7 @@ public class TiagoController : MonoBehaviour
     // Robot object
     private GameObject tiago;
     private GameObject base_link;
+    private Vector3 initPosition;
 
     // Arrays of ArticulationBodies for controlling arms
     private ArticulationBody[] leftArmArticulationBodies;
@@ -50,12 +51,13 @@ public class TiagoController : MonoBehaviour
     };
 
     // Start is called before the first frame update
-    public void Initialize(GameObject robot, GameObject baseLink, float maxLinSpeed, float maxRotSpeed, int steps)
+    public void Initialize(GameObject robot, GameObject baseLink, float maxLinSpeed, float maxRotSpeed, int steps, Vector3 spawnPos)
     {
         tiago = robot;
         base_link = baseLink;
         maxRotationalSpeed = maxLinSpeed;
         maxRotationalSpeed = maxRotSpeed;
+        initPosition = new Vector3(spawnPos.x, spawnPos.y, spawnPos.z);
         this.steps = steps;
 
         // Get reference to robot and go to home position
@@ -236,7 +238,12 @@ public class TiagoController : MonoBehaviour
         StartCoroutine(MoveTorsoRoutine(0.01f));
     }
 
-    public void TeleportRobot(Vector3 relPosition, Quaternion relRotation)
+    public void TeleportRobot(Vector3 position, Quaternion rotation)
+    {
+        base_link.GetComponent<ArticulationBody>().TeleportRoot(position, rotation);
+    }
+
+    public void TeleportRobotRelative(Vector3 relPosition, Quaternion relRotation)
     {
         base_link.GetComponent<ArticulationBody>().TeleportRoot(base_link.transform.position + relPosition, Quaternion.Inverse(relRotation) * base_link.transform.rotation);
     }
