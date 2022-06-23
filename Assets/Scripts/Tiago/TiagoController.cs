@@ -4,9 +4,9 @@ using UnityEngine;
 
 using Unity.Robotics.ROSTCPConnector.ROSGeometry;
 using RosMessageTypes.TiagoUnity;
-using Twist = RosMessageTypes.Geometry.TwistMsg;
+/*using Twist = RosMessageTypes.Geometry.TwistMsg;
 using NavSrvResponse = RosMessageTypes.Nav.GetPlanResponse;
-using PoseStamped = RosMessageTypes.Geometry.PoseStampedMsg;
+using PoseStamped = RosMessageTypes.Geometry.PoseStampedMsg;*/
 using System.Linq;
 
 public class TiagoController : MonoBehaviour
@@ -14,7 +14,6 @@ public class TiagoController : MonoBehaviour
     // Robot object
     private GameObject tiago;
     private GameObject base_link;
-    private Vector3 initPosition;
 
     // Arrays of ArticulationBodies for controlling arms
     private ArticulationBody[] leftArmArticulationBodies;
@@ -29,13 +28,13 @@ public class TiagoController : MonoBehaviour
 
     // Parameters for mobile base control
     public bool receivedFirstCommand = false;
-    private float maxLinearSpeed = 1.5f;
+    /*private float maxLinearSpeed = 1.5f;
     private float maxRotationalSpeed = 1;//
     private float wheelRadius = 0.135f; 
     private float trackWidth = 0.4f; 
     private float forceLimit = 10;
     private float stiffness = 0.0f;
-    private float damping = 10;
+    private float damping = 10;*/
 
     // Variables for trajectory execution
     private int steps;
@@ -51,13 +50,11 @@ public class TiagoController : MonoBehaviour
     };
 
     // Start is called before the first frame update
-    public void Initialize(GameObject robot, GameObject baseLink, float maxLinSpeed, float maxRotSpeed, int steps, Vector3 spawnPos)
+    public void Initialize(GameObject robot, GameObject baseLink, int steps)
     {
         tiago = robot;
         base_link = baseLink;
-        maxRotationalSpeed = maxLinSpeed;
-        maxRotationalSpeed = maxRotSpeed;
-        initPosition = new Vector3(spawnPos.x, spawnPos.y, spawnPos.z);
+
         this.steps = steps;
 
         // Get reference to robot and go to home position
@@ -138,10 +135,10 @@ public class TiagoController : MonoBehaviour
         string right_wheel = base_link + "/suspension_right_link/wheel_right_link";
         wheels[0] = tiago.transform.Find(left_wheel).GetComponent<ArticulationBody>();
         wheels[1] = tiago.transform.Find(right_wheel).GetComponent<ArticulationBody>();
-        foreach(ArticulationBody wheel in wheels)
+        /*foreach(ArticulationBody wheel in wheels)
         {
             SetJointDriveParameters(wheel);
-        }
+        }*/
 
         // Get reference to caster wheels and change articulation parameters to ensure free rotation
         casterWheels = new ArticulationBody[4];
@@ -153,17 +150,17 @@ public class TiagoController : MonoBehaviour
         casterWheels[1] = tiago.transform.Find(caster_back_right).GetComponent<ArticulationBody>();
         casterWheels[2] = tiago.transform.Find(caster_front_left).GetComponent<ArticulationBody>();
         casterWheels[3] = tiago.transform.Find(caster_front_right).GetComponent<ArticulationBody>();
-        foreach(ArticulationBody casterWheel in casterWheels)
+        /*foreach(ArticulationBody casterWheel in casterWheels)
         {
             SetJointDriveParameters(casterWheel);
-        }
+        }*/
 
         MoveToRestPosition();
 
     }
 
     // Set parameters of joint drives for mobile base
-    private void SetJointDriveParameters(ArticulationBody joint)
+    /*private void SetJointDriveParameters(ArticulationBody joint)
     {
         ArticulationDrive drive = joint.xDrive;
         drive.stiffness = stiffness;
@@ -204,8 +201,21 @@ public class TiagoController : MonoBehaviour
         ArticulationDrive drive = joint.xDrive;
         drive.targetVelocity = wheelSpeed;
         joint.xDrive = drive;
+    }*/
+
+    // Routine to teleport the robot's base_link to a new gobal pose
+    public void TeleportRobot(Vector3 position, Quaternion rotation)
+    {
+        base_link.GetComponent<ArticulationBody>().TeleportRoot(position, rotation);
     }
 
+    // Routine to teleport the robot's base_link to a relative pose wrt the current one
+    public void TeleportRobotPosition(Vector3 position)
+    {
+        base_link.GetComponent<ArticulationBody>().TeleportRoot(position, base_link.transform.rotation);
+    }
+
+    // Functions to close and open the robot's gripper
     private void CloseGripper(ArticulationBody[] gripper)
     {
         var leftDrive = gripper[0].xDrive;
@@ -236,16 +246,6 @@ public class TiagoController : MonoBehaviour
         StartCoroutine(MoveArmToRestRoutine(leftArmArticulationBodies, leftGripper));
         StartCoroutine(MoveArmToRestRoutine(rightArmArticulationBodies, rightGripper));
         StartCoroutine(MoveTorsoRoutine(0.01f));
-    }
-
-    public void TeleportRobot(Vector3 position, Quaternion rotation)
-    {
-        base_link.GetComponent<ArticulationBody>().TeleportRoot(position, rotation);
-    }
-
-    public void TeleportRobotRelative(Vector3 relPosition, Quaternion relRotation)
-    {
-        base_link.GetComponent<ArticulationBody>().TeleportRoot(base_link.transform.position + relPosition, Quaternion.Inverse(relRotation) * base_link.transform.rotation);
     }
 
     private IEnumerator MoveArmToRestRoutine(ArticulationBody[] armArticulationBody, ArticulationBody[] gripperArticulationBody)
