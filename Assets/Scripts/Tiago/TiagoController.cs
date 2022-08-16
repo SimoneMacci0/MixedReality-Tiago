@@ -1,13 +1,11 @@
 using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
-using Unity.Robotics.ROSTCPConnector.ROSGeometry;
 using RosMessageTypes.TiagoUnity;
-/*using Twist = RosMessageTypes.Geometry.TwistMsg;
-using NavSrvResponse = RosMessageTypes.Nav.GetPlanResponse;
-using PoseStamped = RosMessageTypes.Geometry.PoseStampedMsg;*/
 using System.Linq;
+
+using Point = RosMessageTypes.Geometry.PointMsg;
+using V3 = RosMessageTypes.Geometry.Vector3Msg;
 
 public class TiagoController : MonoBehaviour
 {
@@ -22,34 +20,14 @@ public class TiagoController : MonoBehaviour
     private ArticulationBody[] rightGripper;
     private ArticulationBody torsoArticulationBody;
 
-    // Wheels articulation bodies
-    private ArticulationBody[] wheels;
-    private ArticulationBody[] casterWheels;
-
-    // Parameters for mobile base control
-    public bool receivedFirstCommand = false;
-    /*private float maxLinearSpeed = 1.5f;
-    private float maxRotationalSpeed = 1;//
-    private float wheelRadius = 0.135f; 
-    private float trackWidth = 0.4f; 
-    private float forceLimit = 10;
-    private float stiffness = 0.0f;
-    private float damping = 10;*/
-
     // Variables for trajectory execution
+    private string lastActionPlanned = "";
+    private string lastArmActionPlanned = "";
+    private ActionServiceResponse lastActionResponse;
     private int steps;
     private float jointAssignmentWait = 0.01f;
-    private enum Poses
-    {
-        PreGrasp,
-        Grasp,
-        PickUp,
-        Move,
-        Place,
-        Return
-    };
+    public bool busy = false;
 
-    // Start is called before the first frame update
     public void Initialize(GameObject robot, GameObject baseLink, int steps)
     {
         tiago = robot;
@@ -129,79 +107,9 @@ public class TiagoController : MonoBehaviour
         rightGripper[0] = tiago.transform.Find(right_gripper_left_finger).GetComponent<ArticulationBody>();
         rightGripper[1] = tiago.transform.Find(right_gripper_right_finger).GetComponent<ArticulationBody>();
 
-        // Get reference to driving wheels and change articulation parameters to ensure smooth motion
-        wheels = new ArticulationBody[2];
-        string left_wheel = base_link + "/suspension_left_link/wheel_left_link";
-        string right_wheel = base_link + "/suspension_right_link/wheel_right_link";
-        wheels[0] = tiago.transform.Find(left_wheel).GetComponent<ArticulationBody>();
-        wheels[1] = tiago.transform.Find(right_wheel).GetComponent<ArticulationBody>();
-        /*foreach(ArticulationBody wheel in wheels)
-        {
-            SetJointDriveParameters(wheel);
-        }*/
-
-        // Get reference to caster wheels and change articulation parameters to ensure free rotation
-        casterWheels = new ArticulationBody[4];
-        string caster_back_left = base_link + "/caster_back_left_1_link/caster_back_left_2_link";
-        string caster_back_right = base_link + "/caster_back_right_1_link/caster_back_right_2_link";
-        string caster_front_left = base_link + "/caster_front_left_1_link/caster_front_left_2_link";
-        string caster_front_right = base_link + "/caster_front_right_1_link/caster_front_right_2_link";
-        casterWheels[0] = tiago.transform.Find(caster_back_left).GetComponent<ArticulationBody>();
-        casterWheels[1] = tiago.transform.Find(caster_back_right).GetComponent<ArticulationBody>();
-        casterWheels[2] = tiago.transform.Find(caster_front_left).GetComponent<ArticulationBody>();
-        casterWheels[3] = tiago.transform.Find(caster_front_right).GetComponent<ArticulationBody>();
-        /*foreach(ArticulationBody casterWheel in casterWheels)
-        {
-            SetJointDriveParameters(casterWheel);
-        }*/
-
         MoveToRestPosition();
 
     }
-
-    // Set parameters of joint drives for mobile base
-    /*private void SetJointDriveParameters(ArticulationBody joint)
-    {
-        ArticulationDrive drive = joint.xDrive;
-        drive.stiffness = stiffness;
-        drive.forceLimit = forceLimit;
-        drive.damping = damping;
-        joint.xDrive = drive;
-    }
-
-    // Apply twist vector to mobile base
-    public void MobileBaseCommand(Twist msg)
-    {
-        if(!receivedFirstCommand)
-        {
-            receivedFirstCommand = true;
-        }
-
-        var speed = 2.0f * (float)msg.linear.x;
-        var rotSpeed = 5.0f * (float)msg.angular.z;
-
-        if (speed > maxLinearSpeed)
-        {
-            speed = maxLinearSpeed;
-        }
-        if (rotSpeed > maxRotationalSpeed)
-        {
-            rotSpeed = maxRotationalSpeed;
-        }
-
-        float wheelSpeedRight = (float)(Mathf.Rad2Deg * ((2 * speed + rotSpeed * trackWidth) / (2 * wheelRadius)));
-        float wheelSpeedLeft = (float)(Mathf.Rad2Deg * ((2 * speed - rotSpeed * trackWidth) / (2 * wheelRadius)));
-
-        SetWheelSpeed(wheels[0], wheelSpeedLeft);
-        SetWheelSpeed(wheels[1], wheelSpeedRight);
-    }
-
-    private void SetWheelSpeed(ArticulationBody joint, float wheelSpeed)
-    {
-        ArticulationDrive drive = joint.xDrive;
-        drive.targetVelocity = wheelSpeed;
-        joint.xDrive = drive;
-    }*/
 
     // Routine to teleport the robot's base_link to a new gobal pose
     public void TeleportRobot(Vector3 position, Quaternion rotation)
@@ -216,23 +124,24 @@ public class TiagoController : MonoBehaviour
     }
 
     // Functions to close and open the robot's gripper
-    private void CloseGripper(ArticulationBody[] gripper)
+    public void CloseGripper(ArticulationBody[] gripper)
     {
         var leftDrive = gripper[0].xDrive;
         var rightDrive = gripper[1].xDrive;
 
-        leftDrive.target = 0.0f;
-        rightDrive.target = 0.0f;
+        leftDrive.target = 0.02f;
+        rightDrive.target = 0.02f;
 
         gripper[0].xDrive = leftDrive;
         gripper[1].xDrive = rightDrive;
     }
 
-    private void OpenGripper(ArticulationBody[] gripper)
+    public void OpenGripper(ArticulationBody[] gripper)
     {
         var leftDrive = gripper[0].xDrive;
         var rightDrive = gripper[1].xDrive;
 
+        // Hardcoded values for open gripper (extracted from Tiago's documentation)
         leftDrive.target = 0.045f;
         rightDrive.target = 0.045f;
 
@@ -240,14 +149,18 @@ public class TiagoController : MonoBehaviour
         gripper[1].xDrive = rightDrive;
     }
 
-    // Move to rest position with open grippers
+    /* ---------------------
+     * Utility methods to drive the robot (arms and torso) to their initial rest configurations when the application starts
+     * Can be set up in order to copy the real robot's configuration if connected
+     */
+
     public void MoveToRestPosition()
     {
         StartCoroutine(MoveArmToRestRoutine(leftArmArticulationBodies, leftGripper));
         StartCoroutine(MoveArmToRestRoutine(rightArmArticulationBodies, rightGripper));
-        StartCoroutine(MoveTorsoRoutine(0.01f));
+        StartCoroutine(MoveTorsoToRestRoutine(0.01f));
     }
-
+    
     private IEnumerator MoveArmToRestRoutine(ArticulationBody[] armArticulationBody, ArticulationBody[] gripperArticulationBody)
     {
         float[] target = { -1.1f, 1.469f, 2.721f, 1.717f, -1.567f, 1.385f, 0.0f };
@@ -271,7 +184,7 @@ public class TiagoController : MonoBehaviour
         OpenGripper(gripperArticulationBody);
     }
 
-    private IEnumerator MoveTorsoRoutine(float target)
+    private IEnumerator MoveTorsoToRestRoutine(float target)
     {
         var steps = 1;
         var torsoDrive = torsoArticulationBody.xDrive;
@@ -285,102 +198,145 @@ public class TiagoController : MonoBehaviour
         }
     }
 
+    // ---------------------
+
+    /* Utility method to extract the joint configuration as an array of double from a given array of ArticulationObject */
     double[] GetCurrentJointStates(ArticulationBody[] arm)
     {
         var jointAngles = new double[8];
         jointAngles[0] = torsoArticulationBody.xDrive.target;
         for (int i = 1; i < 8; i++)
         {
+            // Convert from degrees to radiants as ROS expects rads for planning
             jointAngles[i] = Mathf.Deg2Rad * arm[i-1].xDrive.target;
         }
         
         return jointAngles;
     }
 
-    public PickPlaceServiceRequest PlanningRequest(Vector3 pickPos, Vector3 placePos, Quaternion pickOr, Quaternion placeOr)
+    /* Utility method to contruct a planning request object accepted by the ROS service
+     * Params:
+     *      - arm: the arm for which a plan is sought;
+     *      - actionType: the type of action for which a plan is sought (pick_place, handover ...)
+     *      - pickPos: a 3D point corresponding to the position of the object to pick (for pick_place actions) / handover position;
+     *      - placePos: a 3D point defining the location to place the object / useless for handover actions
+     *      - graspDir: a 3D vector defining the direction of approach and grasping for the robot. Two possibilities are currently contemplated:
+     *              1. Frontal (forward) grasp = (1,0,0);
+     *              2. Vertical (descending) grasp = (0,0,-1).
+     */
+    public ActionServiceRequest PlanningRequest(string arm, string actionType, Point pickPos, Point placePos, V3 graspDir)
     {
-        PickPlaceServiceRequest request = new PickPlaceServiceRequest();
-        
-        request.pick_pose = new RosMessageTypes.Geometry.PoseMsg
-        {
-            position = pickPos.To<FLU>(),
-            orientation = pickOr.To<FLU>()
-        };
+        var request = new ActionServiceRequest();
 
-        request.place_pose = new RosMessageTypes.Geometry.PoseMsg
+        request.action_type = actionType;
+        request.pick_pos = pickPos;
+        if(actionType != "handover")
         {
-            position = placePos.To<FLU>(),
-            orientation = placeOr.To<FLU>()
-        };
+            request.place_pos = placePos;
+        }
+        var bodies = arm == "left" ? leftArmArticulationBodies : rightArmArticulationBodies;
+        // Get current joint configuration for the given arm from the articulation bodies objects
+        request.joint_angles = GetCurrentJointStates(bodies);
+        request.grasp_direction = graspDir;
 
-        request.joint_angles = GetCurrentJointStates(leftArmArticulationBodies);
+        // Store the current information of arm and action type for later holographic rendering
+        lastArmActionPlanned = arm;
+        lastActionPlanned = actionType;
 
         return request;
     }
 
-    public void ROSServiceResponse(PickPlaceServiceResponse response)
+    /* Public callback method accessible from external Interface, called when the planning service returns
+     * If an action is returned, instantiate the coroutine to render it as holographic animation 
+     */
+    public void PlanningServiceResponse(ActionServiceResponse response)
     {
-        if (response.arm_trajectory.trajectory.Length > 0)
+        // If the planner actually found a solution...
+        if (response.planning_result)
         {
             Debug.Log("Trajectory returned.");
-            StartCoroutine(ExecuteTrajectory(response));
+            lastActionResponse = response;
+            StartCoroutine(RenderFullHolographicAction(response));
         }
-        else
-        {
+        else 
             Debug.Log("No trajectory returned from MoveIt.");
+    }
+
+    /* Routine to holo-render all trajectories in a given action.
+     * Calls the RenderHolographicTrajectory method iteratively on all sub-trajectories compisosing the global action, depending
+     * on which type of action is being executed (handover, pick-place ...)
+     */
+    private IEnumerator RenderFullHolographicAction(ActionServiceResponse response)
+    {
+        var armArticulationBodies = lastArmActionPlanned == "left" ? leftArmArticulationBodies : rightArmArticulationBodies;
+
+        // Pre-grasp trajectory is always rendered
+        yield return RenderHolographicTrajectory(response.planned_action.pre_grasp_trajectory, armArticulationBodies, this.steps);
+        // Render the following only if pick and place action
+        if(lastActionPlanned != "handover")
+        {
+            yield return RenderHolographicTrajectory(response.planned_action.grasp_trajectory, armArticulationBodies, steps);
+            yield return RenderHolographicTrajectory(response.planned_action.move_trajectory, armArticulationBodies, steps);
+            yield return RenderHolographicTrajectory(response.planned_action.place_trajectory, armArticulationBodies, steps);
+            yield return RenderHolographicTrajectory(response.planned_action.return_trajectory, armArticulationBodies, Mathf.RoundToInt(steps / 2));
+        }
+        // Action complete, controller no more busy
+        busy = false;
+    }
+
+    /* Internal routine for rendering a single trajectory.
+     * Params:
+     *      - The trajectory to render;
+     *      - The array of articulation bodies that compose the kinematic chain;
+     *      - An integer number of steps, which defines the "granularity" of the holographic animation.
+     */
+    private IEnumerator RenderHolographicTrajectory(RosMessageTypes.Moveit.RobotTrajectoryMsg trajectory, ArticulationBody[] articulationBodies, int steps)
+    {
+        // Initial joint configuration
+        var lastJointState = GetCurrentJointStates(articulationBodies).Select(r => (double)r * Mathf.Rad2Deg).ToArray();
+
+        // For each joint configuration in the given trajectory...
+        for (int jointConfigIndex = 0; jointConfigIndex < trajectory.joint_trajectory.points.Length; jointConfigIndex++)
+        {
+            // Get next joint config and convert from radiant to degree angles (for Unity)
+            var jointPositions = trajectory.joint_trajectory.points[jointConfigIndex].positions;
+            double[] result = jointPositions.Select(r => (double)r * Mathf.Rad2Deg).ToArray();
+
+            // Get reference to torso drive to control torso al well according to the trajectory being rendered
+            var torsoDrive = torsoArticulationBody.xDrive;
+            var lastTorsoValue = torsoDrive.target;
+
+            // Steps drive the smoothness of the animation
+            for (int i = 0; i <= steps; i++)
+            {
+                // For each joint in the kinematic chain...
+                for (int joint = 0; joint < articulationBodies.Length; joint++)
+                {
+                    // compute next joint position based on next joint configuration extracted from the trajectory
+                    var joint1XDrive = articulationBodies[joint].xDrive;
+                    joint1XDrive.target = (float)(lastJointState[joint + 1] + (result[joint + 1] - lastJointState[joint + 1]) * (1.0f / steps) * i);
+                    articulationBodies[joint].xDrive = joint1XDrive;
+                }
+
+                // Same for torso to achieve next position
+                torsoDrive.target = lastTorsoValue + ((float)jointPositions[0] - lastTorsoValue) * (float)(1.0f / steps) * (float)i;
+                torsoArticulationBody.xDrive = torsoDrive;
+
+                // Wait few milliseconds to ensure updates to all joints are received
+                yield return new WaitForSeconds(jointAssignmentWait);
+            }
+
+            lastTorsoValue = torsoDrive.target;
+            lastJointState = result;
         }
     }
 
-    private IEnumerator ExecuteTrajectory(PickPlaceServiceResponse response)
+    public void CompleteHandover()
     {
-        var lastJointState = GetCurrentJointStates(leftArmArticulationBodies).Select(r =>(double)r* Mathf.Rad2Deg).ToArray();
-        var steps = this.steps;
-        for (int poseIndex = 0; poseIndex < response.arm_trajectory.trajectory.Length; poseIndex++)
-        {
-            if(poseIndex == response.arm_trajectory.trajectory.Length - 1)
-            {
-                steps = 2;
-            }
+        var gripper = lastArmActionPlanned == "left" ? leftGripper : rightGripper;
+        var articulationBody = lastArmActionPlanned == "left" ? leftArmArticulationBodies : rightArmArticulationBodies;
+        CloseGripper(gripper);
+        StartCoroutine(RenderHolographicTrajectory(lastActionResponse.planned_action.return_trajectory, articulationBody, Mathf.RoundToInt(steps / 2)));
 
-            for (int jointConfigIndex = 0; jointConfigIndex < response.arm_trajectory.trajectory[poseIndex].joint_trajectory.points.Length; jointConfigIndex++)
-            {
-                var jointPositions = response.arm_trajectory.trajectory[poseIndex].joint_trajectory.points[jointConfigIndex].positions;
-                double[] result = jointPositions.Select(r => (double)r * Mathf.Rad2Deg).ToArray();
-
-                var torsoDrive = torsoArticulationBody.xDrive;
-                var lastTorsoValue = torsoDrive.target;
-                
-                for (int i = 0; i <= steps; i++)
-                {
-                    for (int joint = 0; joint < leftArmArticulationBodies.Length; joint++)
-                    {
-                        var joint1XDrive = leftArmArticulationBodies[joint].xDrive;
-                        joint1XDrive.target = (float)(lastJointState[joint+1] + (result[joint+1] - lastJointState[joint+1]) * (1.0f / steps) * i);
-                        leftArmArticulationBodies[joint].xDrive = joint1XDrive;
-                    }
-
-                    torsoDrive.target = lastTorsoValue + ((float)jointPositions[0] - lastTorsoValue) * (float)(1.0f / steps) * (float)i;
-                    torsoArticulationBody.xDrive = torsoDrive;
-                    
-
-                    yield return new WaitForSeconds(jointAssignmentWait);
-                }
-                lastTorsoValue = torsoDrive.target;
-                lastJointState = result;
-
-            }
-            // Make sure gripper is open at the beginning
-            if (poseIndex == (int)Poses.PreGrasp || poseIndex == (int)Poses.Place)
-            {
-                yield return new WaitForSeconds(0.5f);
-                OpenGripper(leftGripper);
-            }
-            // Close gripper on object grasping
-            if (poseIndex == (int)Poses.Grasp)
-            {
-                yield return new WaitForSeconds(0.5f);
-                CloseGripper(leftGripper);
-            }
-        }
     }
 }

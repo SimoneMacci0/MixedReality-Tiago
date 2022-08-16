@@ -12,6 +12,8 @@ using PoseStamped = RosMessageTypes.Geometry.PoseStampedMsg;
 using NavSrvRequest = RosMessageTypes.Nav.GetPlanRequest;
 using NavSrvResponse = RosMessageTypes.Nav.GetPlanResponse;
 using PointMsg = RosMessageTypes.Geometry.Point32Msg;
+using Point = RosMessageTypes.Geometry.PointMsg;
+using V3 = RosMessageTypes.Geometry.Vector3Msg;
 
 public class TiagoROSInterface : MonoBehaviour
 {
@@ -19,11 +21,12 @@ public class TiagoROSInterface : MonoBehaviour
     private ROSConnection ros;
 
     // ROS topics and services names
-    //private string plannerServiceName = "tiago_unity_motion_planner";
     private string navigationTargetReachedTopic = "move_base/result";
     private string moveBaseMakePlanService = "/move_base/make_plan";
     private string baseLinkPoseService = "/base_footprint_pose_service";
     private string moveBaseSendNavGoalTargetTopic = "/move_base_simple/goal";
+    private string leftGroupMotionPlannerSrv = "/left_group/tiago_unity_motion_planner";
+    private string rightGroupMotionPlannerSrv = "/right_group/tiago_unity_motion_planner";
 
     // Tiago Reference
     public GameObject tiago;
@@ -33,17 +36,23 @@ public class TiagoROSInterface : MonoBehaviour
     private TiagoController controller;
 
     // Variables for object grasping
-    private float liftOffset = 0.1f;
+    public GameObject leftHandoverPos;
+    public GameObject rightHandoverPos;
 
     // Scene objects
     public GameObject scene;
     public GameObject marker;
-    public GameObject pickObject;
-    public GameObject placeObject;
+    public GameObject interactable;
+    //public GameObject placeObject;
     public GameObject navTarget1;
 
     // Variable for rendering holographic arm trakectories
     public int steps;
+
+    // Variables for referencing grasping frames
+    public GameObject leftGraspingFrame;
+    public GameObject rightGraspingFrame;
+    private float graspOffset = 0.06f;
 
     // Variable specifying delay after which send navigation goal
     public int delay;
@@ -51,7 +60,6 @@ public class TiagoROSInterface : MonoBehaviour
     // Other variables
     private Vector3 basePos;
     private Quaternion baseRot;
-    private Vector3 posDiff;
 
 
     IEnumerator Start()
@@ -94,11 +102,16 @@ public class TiagoROSInterface : MonoBehaviour
         ros.RegisterRosService<NavSrvRequest, NavSrvResponse>(moveBaseMakePlanService);
         ros.RegisterRosService<PoseServiceRequest, PoseServiceResponse>(baseLinkPoseService);
         ros.Subscribe<MoveBaseActionResultMsg>(navigationTargetReachedTopic, NavTargetCallback);
-        
+        ros.RegisterRosService<ActionServiceRequest, ActionServiceResponse>(leftGroupMotionPlannerSrv);
+        ros.RegisterRosService<ActionServiceRequest, ActionServiceResponse>(rightGroupMotionPlannerSrv);
+
         // Send request to get initial robot's pose
         var request = new PoseServiceRequest();
         ros.SendServiceMessage<PoseServiceResponse>(baseLinkPoseService, request, BaseLinkPoseServiceResponse);
     }
+
+    // -------------------------------------
+    // METHODS RELATED TO ROBOT'S MOBILE BASE AND HOLOGRAPHIC NAVIGATION
 
     // Call make_plan service to retrieve  navigation plan
     public void GetNavigationPlan()
@@ -204,7 +217,7 @@ public class TiagoROSInterface : MonoBehaviour
                 else if (i == response.plan.poses.Length - 1)
                 {
                     var diff = newPos - initPos;
-                    posDiff = new Vector3(diff.x, diff.y, diff.z);
+                    //posDiff = new Vector3(diff.x, diff.y, diff.z);
                 }
                 i++;
             }
@@ -214,7 +227,7 @@ public class TiagoROSInterface : MonoBehaviour
     // On navigation complete, update robot's pose for coherent visualization
     public void NavTargetCallback(MoveBaseActionResultMsg msg)
     {
-        Debug.Log(msg.status.text);
+        //Debug.Log(msg.status.text);
 
         var request = new PoseServiceRequest();
         ros.SendServiceMessage<PoseServiceResponse>(baseLinkPoseService, request, UpdateRobotPoseOnTargetReached);
@@ -222,21 +235,11 @@ public class TiagoROSInterface : MonoBehaviour
 
     public void UpdateRobotPoseOnTargetReached(PoseServiceResponse response)
     {
-        var oldBasePos = new Vector3(basePos.x, basePos.y, basePos.z);
-        var oldBaseRot = new Quaternion(baseRot.x, baseRot.y, baseRot.z, baseRot.w);
-
         basePos = new PointMsg(
             (float)response.base_link_pose.position.x,
             (float)response.base_link_pose.position.y,
             (float)response.base_link_pose.position.z).From<FLU>();
         baseRot = response.base_link_pose.orientation.From<FLU>();
-
-        var baseDiff = baseLink.transform.rotation * Quaternion.Inverse(baseRot) * (basePos - oldBasePos) - posDiff;
-
-        //var newPos = baseLink.transform.rotation * Quaternion.Inverse(baseRot) * (lastPoint - basePos) + baseLink.transform.position;
-        var newPos = baseLink.transform.position + baseDiff;
-        //var newRot = baseLink.transform.rotation * Quaternion.Inverse(oldBaseRot) * baseRot;
-        controller.TeleportRobotPosition(newPos);
 
         // re-enable gravity 
         tiago.GetComponent<UrdfRobot>().SetRigidbodiesUseGravity();
@@ -246,21 +249,42 @@ public class TiagoROSInterface : MonoBehaviour
         navTarget1.transform.localPosition = new Vector3(0, 0, 0.5f);
     }
 
-    /*public void PlanMotion()
+    // -------------------------------------
+    // METHODS RELATED TO ROBOT'S UPPER LIMBS MOVEMENTS AND MOTION PLANNING
+
+    public void PlanHandoverMotion(string arm)
     {
-        var pickPosition = pickObject.transform.localPosition;
-        var pickPositionWRTBaseLink = baseLink.transform.InverseTransformPoint(pickPosition);
-        pickPositionWRTBaseLink.y += liftOffset;
-        var pickOrientation = Quaternion.Euler(0, 0, -90);
+        var handoverPos = arm == "left" ? leftHandoverPos : rightHandoverPos;
 
-        var placePosition = placeObject.transform.localPosition;
-        var placePositionWRTBaseLink = baseLink.transform.InverseTransformPoint(placePosition);
-        placePositionWRTBaseLink.y = pickPositionWRTBaseLink.y;
-        var placeOrientation = pickOrientation;
+        // Convert from Unity to ROS coordinates 
+        var rosHandoverPos = new Point();
+        rosHandoverPos.x = handoverPos.transform.localPosition.z;
+        rosHandoverPos.y = -handoverPos.transform.localPosition.x;
+        rosHandoverPos.z = handoverPos.transform.localPosition.y;
 
-        PickPlaceServiceRequest request = null;
-        request = controller.PlanningRequest(pickPositionWRTBaseLink, placePositionWRTBaseLink, pickOrientation, placeOrientation);
-        ros.SendServiceMessage<PickPlaceServiceResponse>("left_group/" + plannerServiceName, request, controller.ROSServiceResponse);
-    }*/
+        var request = controller.PlanningRequest(arm, "handover", rosHandoverPos, null, new V3(1, 0, 0));
+
+        // Send request to plan handover and set controller to busy, to wait for completion of holographic motion 
+        ros.SendServiceMessage<ActionServiceResponse>("/" + arm + "_group/tiago_unity_motion_planner", request, controller.PlanningServiceResponse);
+        StartCoroutine(SpawnInteractableOnMovementCompletion(arm)); 
+    }
+
+    private IEnumerator SpawnInteractableOnMovementCompletion(string arm)
+    {
+        controller.busy = true;
+        while (controller.busy)
+        {
+            yield return new WaitForSeconds(0.25f);
+        }
+        var graspingFrame = arm == "left" ? leftGraspingFrame : rightGraspingFrame;
+        interactable.SetActive(true);
+        interactable.transform.SetPositionAndRotation(leftGraspingFrame.transform.position + graspOffset * Vector3.back, Quaternion.identity);
+    }
+
+    public void OnHandoverDetected()
+    {
+        controller.CompleteHandover();
+    }
+
 
 }

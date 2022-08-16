@@ -1,0 +1,8 @@
+string action_type
+float64[] joint_angles
+geometry_msgs/Point pick_pos
+geometry_msgs/Point place_pos
+geometry_msgs/Vector3 grasp_direction
+---
+bool planning_result
+PlannedAction planned_action

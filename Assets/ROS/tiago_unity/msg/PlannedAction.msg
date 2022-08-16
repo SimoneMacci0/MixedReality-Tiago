@@ -1,0 +1,6 @@
+moveit_msgs/RobotTrajectory pre_grasp_trajectory
+moveit_msgs/RobotTrajectory grasp_trajectory
+moveit_msgs/RobotTrajectory move_trajectory
+moveit_msgs/RobotTrajectory place_trajectory
+moveit_msgs/RobotTrajectory return_trajectory
+
