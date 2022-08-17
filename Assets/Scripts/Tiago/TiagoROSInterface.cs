@@ -42,9 +42,9 @@ public class TiagoROSInterface : MonoBehaviour
     // Scene objects
     public GameObject scene;
     public GameObject marker;
-    public GameObject interactable;
+    public GameObject[] interactables;
     //public GameObject placeObject;
-    public GameObject navTarget1;
+    public GameObject navTarget;
 
     // Variable for rendering holographic arm trakectories
     public int steps;
@@ -139,7 +139,7 @@ public class TiagoROSInterface : MonoBehaviour
             },
             pose =
             {
-                position = (basePos + (baseRot) * (navTarget1.transform.localPosition)).To<FLU>(),
+                position = (basePos + (baseRot) * (navTarget.transform.localPosition)).To<FLU>(),
                 orientation = Quaternion.identity.To<FLU>(),
             }
         };
@@ -174,7 +174,7 @@ public class TiagoROSInterface : MonoBehaviour
     {
         if (response.plan.poses.Length > 0)
         {
-            navTarget1.SetActive(false);
+            navTarget.SetActive(false);
             StartCoroutine(PathHoloNavigationRoutine(response));
         }
         else
@@ -245,8 +245,8 @@ public class TiagoROSInterface : MonoBehaviour
         tiago.GetComponent<UrdfRobot>().SetRigidbodiesUseGravity();
 
         // Set target for navigation active again in front of the robot's base
-        navTarget1.SetActive(true);
-        navTarget1.transform.localPosition = new Vector3(0, 0, 0.5f);
+        navTarget.SetActive(true);
+        navTarget.transform.localPosition = new Vector3(0, 0, 0.5f);
     }
 
     // -------------------------------------
@@ -266,10 +266,10 @@ public class TiagoROSInterface : MonoBehaviour
 
         // Send request to plan handover and set controller to busy, to wait for completion of holographic motion 
         ros.SendServiceMessage<ActionServiceResponse>("/" + arm + "_group/tiago_unity_motion_planner", request, controller.PlanningServiceResponse);
-        StartCoroutine(SpawnInteractableOnMovementCompletion(arm)); 
+        StartCoroutine(SpawnInteractableOnMovementCompletion(arm, 0)); 
     }
 
-    private IEnumerator SpawnInteractableOnMovementCompletion(string arm)
+    private IEnumerator SpawnInteractableOnMovementCompletion(string arm, int idx)
     {
         controller.busy = true;
         while (controller.busy)
@@ -277,8 +277,8 @@ public class TiagoROSInterface : MonoBehaviour
             yield return new WaitForSeconds(0.25f);
         }
         var graspingFrame = arm == "left" ? leftGraspingFrame : rightGraspingFrame;
-        interactable.SetActive(true);
-        interactable.transform.SetPositionAndRotation(leftGraspingFrame.transform.position + graspOffset * Vector3.back, Quaternion.identity);
+        interactables[idx].SetActive(true);
+        interactables[idx].transform.SetPositionAndRotation(leftGraspingFrame.transform.position + graspOffset * Vector3.back, Quaternion.identity);
     }
 
     public void OnHandoverDetected()

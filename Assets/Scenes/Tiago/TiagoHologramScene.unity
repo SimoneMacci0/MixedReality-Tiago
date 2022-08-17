@@ -7801,7 +7801,6 @@ Transform:
   - {fileID: 438875795}
   - {fileID: 1625976922}
   - {fileID: 180225108}
-  - {fileID: 1555068395}
   m_Father: {fileID: 1457873279}
   m_RootOrder: 12
   m_LocalEulerAnglesHint: {x: 0, y: 180, z: 0}
@@ -13994,6 +13993,7 @@ Transform:
   - {fileID: 1874539259}
   - {fileID: 1617008238}
   - {fileID: 838800626}
+  - {fileID: 1962315964}
   m_Father: {fileID: 0}
   m_RootOrder: 3
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
@@ -14017,8 +14017,9 @@ MonoBehaviour:
   rightHandoverPos: {fileID: 180225107}
   scene: {fileID: 838800625}
   marker: {fileID: 1874539258}
-  interactable: {fileID: 1555068394}
-  navTarget1: {fileID: 438875794}
+  interactables:
+  - {fileID: 1555068394}
+  navTarget: {fileID: 0}
   steps: 20
   leftGraspingFrame: {fileID: 598212050}
   rightGraspingFrame: {fileID: 1427720499}
@@ -14760,8 +14761,8 @@ GameObject:
   - component: {fileID: 1555068395}
   - component: {fileID: 1555068399}
   - component: {fileID: 1555068398}
-  - component: {fileID: 1555068400}
   - component: {fileID: 1555068397}
+  - component: {fileID: 1555068396}
   m_Layer: 0
   m_Name: Bottle
   m_TagString: Untagged
@@ -14776,13 +14777,29 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1555068394}
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 5, z: 0}
+  m_LocalRotation: {x: -0, y: 1, z: -0, w: 0}
+  m_LocalPosition: {x: 0, y: 5.1984997, z: 0}
   m_LocalScale: {x: 0.06, y: 0.12, z: 0.06}
   m_Children: []
-  m_Father: {fileID: 734605166}
-  m_RootOrder: 3
+  m_Father: {fileID: 1962315964}
+  m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!54 &1555068396
+Rigidbody:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1555068394}
+  serializedVersion: 2
+  m_Mass: 0.5
+  m_Drag: 50
+  m_AngularDrag: 50
+  m_UseGravity: 0
+  m_IsKinematic: 0
+  m_Interpolate: 0
+  m_Constraints: 0
+  m_CollisionDetection: 0
 --- !u!65 &1555068397
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -14845,18 +14862,6 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1555068394}
   m_Mesh: {fileID: 10206, guid: 0000000000000000e000000000000000, type: 0}
---- !u!114 &1555068400
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1555068394}
-  m_Enabled: 0
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: ae5a4f2c0191f354cb90432fac8d1513, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!1001 &1556434463
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -19135,6 +19140,37 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   IsBaseLink: 0
+--- !u!1 &1962315963
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1962315964}
+  m_Layer: 0
+  m_Name: Interactables
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1962315964
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1962315963}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_Children:
+  - {fileID: 1555068395}
+  m_Father: {fileID: 1483877256}
+  m_RootOrder: 3
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1965176258
 GameObject:
   m_ObjectHideFlags: 8
