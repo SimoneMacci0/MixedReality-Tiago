@@ -1,0 +1,5 @@
+<?xml version="1.0"?>
+<launch>
+	<node pkg="tf" type="static_transform_publisher" name="zed_to_head_tf" args="-0.01 0.09 0.054 -1.57 0 -1.57 xtion_link zed_camera 10" />
+	<node pkg="tf" type="static_transform_publisher" name="world_to_map" args="-0.05 0.05 0 3.37 0 0 world map 10" />
+</launch>

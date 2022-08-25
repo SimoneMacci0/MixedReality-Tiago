@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<launch>
+    <!-- Parameters to load in ROS -->
+    <rosparam file="$(find tiago_holo_dt)/config/params.yaml" command="load"/>
+
+    <!-- Navigation simulation -->
+    <include file="$(find tiago_dual_153_gazebo)/launch/tiago_dual_navigation.launch" />
+
+    <!-- MoveIt stuff -->
+    <include file="$(find tiago_dual_moveit_config)/launch/planning_context.launch">
+    	<arg name="load_robot_description" value="true"/>
+	<arg name="end_effector_left"  default="pal-gripper"/>
+	<arg name="end_effector_right"  default="pal-gripper"/>
+	<arg name="ft_sensor_left"  default="False"/>
+    </include>
+
+    <!-- We do not have a robot connected, so publish fake joint states -->
+    <node name="joint_state_publisher" pkg="joint_state_publisher" type="joint_state_publisher">
+    	<param name="use_gui" value="false"/>
+    	<rosparam param="source_list">[move_group/fake_controller_joint_states]</rosparam>
+    </node>
+
+    <node name="server_endpoint" pkg="ros_tcp_endpoint" type="default_server_endpoint.py" args="--wait" output="screen" respawn="true" />
+
+    <node name="left_motion_planner" pkg="tiago_holo_dt" type="motion_planner.py" args="--limb left" output="screen" respawn="true" />
+    <node name="right_motion_planner" pkg="tiago_holo_dt" type="motion_planner.py" args="--limb right" output="screen" respawn="true" />
+
+    <node name="base_footprint_srv" pkg="tiago_holo_dt" type="base_footprint_pose_service.py" args="--wait" output="screen" respawn="true" />
+</launch>

@@ -1,0 +1,5 @@
+bool planning_result
+string planning_arm
+string action_type
+PlannedAction planned_action
+

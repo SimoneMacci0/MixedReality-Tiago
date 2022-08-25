@@ -1,7 +1,7 @@
 using System.Collections;
 using UnityEngine;
 
-using RosMessageTypes.TiagoUnity;
+using RosMessageTypes.TiagoHoloDt;
 using System.Linq;
 
 using Point = RosMessageTypes.Geometry.PointMsg;
@@ -21,9 +21,8 @@ public class TiagoController : MonoBehaviour
     private ArticulationBody torsoArticulationBody;
 
     // Variables for trajectory execution
-    private string lastActionPlanned = "";
     private string lastArmActionPlanned = "";
-    private ActionServiceResponse lastActionResponse;
+    private PlannedActionMsg lastActionPlanned;
     private int steps;
     private float jointAssignmentWait = 0.01f;
     public bool busy = false;
@@ -239,24 +238,23 @@ public class TiagoController : MonoBehaviour
         request.joint_angles = GetCurrentJointStates(bodies);
         request.grasp_direction = graspDir;
 
-        // Store the current information of arm and action type for later holographic rendering
-        lastArmActionPlanned = arm;
-        lastActionPlanned = actionType;
-
         return request;
     }
 
     /* Public callback method accessible from external Interface, called when the planning service returns
      * If an action is returned, instantiate the coroutine to render it as holographic animation 
      */
-    public void PlanningServiceResponse(ActionServiceResponse response)
+    public void ActionPlanningServiceResponse(PlannedActionWithTypeAndArmMsg action)
     {
         // If the planner actually found a solution...
-        if (response.planning_result)
+        if (action.planning_result)
         {
             Debug.Log("Trajectory returned.");
-            lastActionResponse = response;
-            StartCoroutine(RenderFullHolographicAction(response));
+         
+            lastArmActionPlanned = action.planning_arm;
+            lastActionPlanned = action.planned_action;
+
+            StartCoroutine(RenderFullHolographicAction(action));
         }
         else 
             Debug.Log("No trajectory returned from MoveIt.");
@@ -266,19 +264,25 @@ public class TiagoController : MonoBehaviour
      * Calls the RenderHolographicTrajectory method iteratively on all sub-trajectories compisosing the global action, depending
      * on which type of action is being executed (handover, pick-place ...)
      */
-    private IEnumerator RenderFullHolographicAction(ActionServiceResponse response)
+    private IEnumerator RenderFullHolographicAction(PlannedActionWithTypeAndArmMsg action)
     {
-        var armArticulationBodies = lastArmActionPlanned == "left" ? leftArmArticulationBodies : rightArmArticulationBodies;
+        var armArticulationBodies = action.planning_arm == "left" ? leftArmArticulationBodies : rightArmArticulationBodies;
 
         // Pre-grasp trajectory is always rendered
-        yield return RenderHolographicTrajectory(response.planned_action.pre_grasp_trajectory, armArticulationBodies, this.steps);
-        // Render the following only if pick and place action
-        if(lastActionPlanned != "handover")
+        if(action.action_type != "handover")
         {
-            yield return RenderHolographicTrajectory(response.planned_action.grasp_trajectory, armArticulationBodies, steps);
-            yield return RenderHolographicTrajectory(response.planned_action.move_trajectory, armArticulationBodies, steps);
-            yield return RenderHolographicTrajectory(response.planned_action.place_trajectory, armArticulationBodies, steps);
-            yield return RenderHolographicTrajectory(response.planned_action.return_trajectory, armArticulationBodies, Mathf.RoundToInt(steps / 2));
+            yield return RenderHolographicTrajectory(action.planned_action.pre_grasp_trajectory, armArticulationBodies, this.steps);
+        }
+        else
+            yield return RenderHolographicTrajectory(action.planned_action.pre_grasp_trajectory, armArticulationBodies, 1);
+
+        // Render the following only if pick and place action
+        if (action.action_type != "handover")
+        {
+            yield return RenderHolographicTrajectory(action.planned_action.grasp_trajectory, armArticulationBodies, steps);
+            yield return RenderHolographicTrajectory(action.planned_action.move_trajectory, armArticulationBodies, steps);
+            yield return RenderHolographicTrajectory(action.planned_action.place_trajectory, armArticulationBodies, steps);
+            yield return RenderHolographicTrajectory(action.planned_action.return_trajectory, armArticulationBodies, Mathf.RoundToInt(steps / 2));
         }
         // Action complete, controller no more busy
         busy = false;
@@ -336,7 +340,7 @@ public class TiagoController : MonoBehaviour
         var gripper = lastArmActionPlanned == "left" ? leftGripper : rightGripper;
         var articulationBody = lastArmActionPlanned == "left" ? leftArmArticulationBodies : rightArmArticulationBodies;
         CloseGripper(gripper);
-        StartCoroutine(RenderHolographicTrajectory(lastActionResponse.planned_action.return_trajectory, articulationBody, steps));
+        StartCoroutine(RenderHolographicTrajectory(lastActionPlanned.return_trajectory, articulationBody, steps));
 
     }
 }

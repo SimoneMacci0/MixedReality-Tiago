@@ -3,7 +3,7 @@ using UnityEngine;
 using Unity.Robotics.ROSTCPConnector;
 using Unity.Robotics.UrdfImporter;
 
-using RosMessageTypes.TiagoUnity;
+using RosMessageTypes.TiagoHoloDt;
 using RosMessageTypes.MoveBase;
 using Unity.Robotics.ROSTCPConnector.ROSGeometry;
 
@@ -27,11 +27,12 @@ public class TiagoROSInterface : MonoBehaviour
     private string leftGroupMotionPlannerSrv = "/left_group/plan_action";
     private string rightGroupMotionPlannerSrv = "/right_group/plan_action";
 
+    private string plannedActionTopic = "/planned_action";
+
     // Tiago Reference
     public GameObject tiago;
     public GameObject baseFootprint;
     public GameObject baseLink;
-    public GameObject laser;
     private TiagoController controller;
 
     // Variables for object grasping
@@ -97,6 +98,7 @@ public class TiagoROSInterface : MonoBehaviour
         // Register various topics and services from ROS 
         ros.Subscribe<Path>(navigationPathTopic, NavigationPlanCallback);
         ros.Subscribe<MoveBaseActionResultMsg>(navigationTargetReachedTopic, NavigationTargetReachedCallback);
+        ros.Subscribe<PlannedActionWithTypeAndArmMsg>(plannedActionTopic, controller.ActionPlanningServiceResponse);
 
         ros.RegisterRosService<PoseServiceRequest, PoseServiceResponse>(baseFootprintPoseService);
         ros.RegisterRosService<ActionServiceRequest, ActionServiceResponse>(leftGroupMotionPlannerSrv);
@@ -181,7 +183,7 @@ public class TiagoROSInterface : MonoBehaviour
 
     public void PlanHandoverMotion(string arm)
     {
-        var handoverPos = arm == "left" ? leftHandoverPos : rightHandoverPos;
+        /*var handoverPos = arm == "left" ? leftHandoverPos : rightHandoverPos;
         var plannerSrv = arm == "left" ? leftGroupMotionPlannerSrv : rightGroupMotionPlannerSrv;
 
         // Convert from Unity to ROS coordinates 
@@ -194,7 +196,7 @@ public class TiagoROSInterface : MonoBehaviour
 
         // Send request to plan handover and set controller to busy, to wait for completion of holographic motion 
         ros.SendServiceMessage<ActionServiceResponse>(plannerSrv, request, controller.PlanningServiceResponse);
-        StartCoroutine(SpawnInteractableOnMovementCompletion(arm, 0)); 
+        StartCoroutine(SpawnInteractableOnMovementCompletion(arm, 0)); */
     }
 
     private IEnumerator SpawnInteractableOnMovementCompletion(string arm, int idx)
