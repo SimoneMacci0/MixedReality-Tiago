@@ -7,13 +7,11 @@ using RosMessageTypes.TiagoUnity;
 using RosMessageTypes.MoveBase;
 using Unity.Robotics.ROSTCPConnector.ROSGeometry;
 
-using Header = RosMessageTypes.Std.HeaderMsg;
 using PoseStamped = RosMessageTypes.Geometry.PoseStampedMsg;
-using NavSrvRequest = RosMessageTypes.Nav.GetPlanRequest;
-using NavSrvResponse = RosMessageTypes.Nav.GetPlanResponse;
 using PointMsg = RosMessageTypes.Geometry.Point32Msg;
 using Point = RosMessageTypes.Geometry.PointMsg;
 using V3 = RosMessageTypes.Geometry.Vector3Msg;
+using Path = RosMessageTypes.Nav.PathMsg;
 
 public class TiagoROSInterface : MonoBehaviour
 {
@@ -21,12 +19,13 @@ public class TiagoROSInterface : MonoBehaviour
     private ROSConnection ros;
 
     // ROS topics and services names
-    private string navigationTargetReachedTopic = "move_base/result";
-    private string moveBaseMakePlanService = "/move_base/make_plan";
-    private string baseLinkPoseService = "/base_footprint_pose_service";
-    private string moveBaseSendNavGoalTargetTopic = "/move_base_simple/goal";
-    private string leftGroupMotionPlannerSrv = "/left_group/tiago_unity_motion_planner";
-    private string rightGroupMotionPlannerSrv = "/right_group/tiago_unity_motion_planner";
+    private string baseFootprintPoseService = "/base_footprint_pose_service";
+
+    private string navigationPathTopic = "/navigation_plan";
+    private string navigationTargetReachedTopic = "/move_base/result";
+
+    private string leftGroupMotionPlannerSrv = "/left_group/plan_action";
+    private string rightGroupMotionPlannerSrv = "/right_group/plan_action";
 
     // Tiago Reference
     public GameObject tiago;
@@ -43,10 +42,8 @@ public class TiagoROSInterface : MonoBehaviour
     public GameObject scene;
     public GameObject marker;
     public GameObject[] interactables;
-    //public GameObject placeObject;
-    public GameObject navTarget;
 
-    // Variable for rendering holographic arm trakectories
+    // Variable for rendering holographic arm trajectories
     public int steps;
 
     // Variables for referencing grasping frames
@@ -98,71 +95,24 @@ public class TiagoROSInterface : MonoBehaviour
         controller.Initialize(tiago, baseLink, steps);
 
         // Register various topics and services from ROS 
-        ros.RegisterPublisher<PoseStamped>(moveBaseSendNavGoalTargetTopic);
-        ros.RegisterRosService<NavSrvRequest, NavSrvResponse>(moveBaseMakePlanService);
-        ros.RegisterRosService<PoseServiceRequest, PoseServiceResponse>(baseLinkPoseService);
-        ros.Subscribe<MoveBaseActionResultMsg>(navigationTargetReachedTopic, NavTargetCallback);
+        ros.Subscribe<Path>(navigationPathTopic, NavigationPlanCallback);
+        ros.Subscribe<MoveBaseActionResultMsg>(navigationTargetReachedTopic, NavigationTargetReachedCallback);
+
+        ros.RegisterRosService<PoseServiceRequest, PoseServiceResponse>(baseFootprintPoseService);
         ros.RegisterRosService<ActionServiceRequest, ActionServiceResponse>(leftGroupMotionPlannerSrv);
         ros.RegisterRosService<ActionServiceRequest, ActionServiceResponse>(rightGroupMotionPlannerSrv);
 
         // Send request to get initial robot's pose
         var request = new PoseServiceRequest();
-        ros.SendServiceMessage<PoseServiceResponse>(baseLinkPoseService, request, BaseLinkPoseServiceResponse);
+        ros.SendServiceMessage<PoseServiceResponse>(baseFootprintPoseService, request, BaseLinkPoseServiceResponse);
     }
 
     // -------------------------------------
     // METHODS RELATED TO ROBOT'S MOBILE BASE AND HOLOGRAPHIC NAVIGATION
 
-    // Call make_plan service to retrieve  navigation plan
-    public void GetNavigationPlan()
-    {
-        // Start pose
-        var basePose = new PoseStamped
-        {
-            header = new Header
-            {
-                frame_id = "map"
-            },
-            pose =
-            {
-                position = basePos.To<FLU>(),
-                orientation = baseRot.To<FLU>(),
-            }
-        };
-
-        // Goal pose to be reached
-        var goalPose = new PoseStamped
-        {
-            header = new Header
-            {
-                frame_id = "map"
-            },
-            pose =
-            {
-                position = (basePos + (baseRot) * (navTarget.transform.localPosition)).To<FLU>(),
-                orientation = Quaternion.identity.To<FLU>(),
-            }
-        };
-
-        // Send request
-        var request = new NavSrvRequest();
-        request.start = basePose;
-        request.goal = goalPose;
-
-        ros.SendServiceMessage<NavSrvResponse>(moveBaseMakePlanService, request, NavServiceResponse);
-
-    }
-
-    private IEnumerator SendGoalAfterDelay(PoseStamped goal)
-    {
-        yield return new WaitForSeconds(delay);
-        ros.Publish(moveBaseSendNavGoalTargetTopic, goal);
-    }
-
     // Update robot's base_link pose with respect to ROS map frame
     public void BaseLinkPoseServiceResponse(PoseServiceResponse response)
     {
-        Debug.Log(response.base_link_pose.position);
         basePos = new PointMsg(
             (float)response.base_link_pose.position.x, 
             (float)response.base_link_pose.position.y, 
@@ -170,18 +120,18 @@ public class TiagoROSInterface : MonoBehaviour
         baseRot = response.base_link_pose.orientation.From<FLU>();
     }
 
-    public void NavServiceResponse(NavSrvResponse response)
+    // Callback function called whenever a navigation plan has been received
+    public void NavigationPlanCallback(Path path)
     {
-        if (response.plan.poses.Length > 0)
+        if (path != null)
         {
-            navTarget.SetActive(false);
-            StartCoroutine(PathHoloNavigationRoutine(response));
+            StartCoroutine(HoloNavigationRoutine(path));
         }
         else
-            Debug.Log("No plan found!");
+            Debug.Log("Empty path message received");
     }
 
-    private IEnumerator PathHoloNavigationRoutine(NavSrvResponse response)
+    private IEnumerator HoloNavigationRoutine(Path path)
     {
         // Disable urdf robot gravity for teleporting smoothly
         tiago.GetComponent<UrdfRobot>().SetRigidbodiesUseGravity();
@@ -190,47 +140,28 @@ public class TiagoROSInterface : MonoBehaviour
         var initPos = baseLink.transform.position;
         var initRot = baseLink.transform.rotation;
 
-        // Send goal position to robot controller after delay
-        StartCoroutine(SendGoalAfterDelay(response.plan.poses[response.plan.poses.Length - 2]));
-
-        // Repeat holo path N times
-        for (int t=0; t < 1; t++)
+        foreach (PoseStamped ps in path.poses)
         {
-            int i = 0;
-            foreach (PoseStamped ps in response.plan.poses)
-            {
-                // Get i-th navigation point from the overall path
-                var position = new PointMsg((float)ps.pose.position.x, (float)ps.pose.position.y, (float)ps.pose.position.z).From<FLU>();
-                var orientation = ps.pose.orientation.From<FLU>();
+            // Get i-th navigation point from the overall path
+            var position = new PointMsg((float)ps.pose.position.x, (float)ps.pose.position.y, (float)ps.pose.position.z).From<FLU>();
+            var orientation = ps.pose.orientation.From<FLU>();
 
-                // Need to transform ROS coordinate to Unity and then project everything in the Unity fixed frame
-                var newPos = initRot * Quaternion.Inverse(baseRot) * (position - basePos) + initPos;
-                var newRot = initRot * Quaternion.Inverse(baseRot) * orientation;
+            // Need to transform ROS coordinate to Unity and then project everything in the Unity fixed frame
+            var newPos = initRot * Quaternion.Inverse(baseRot) * (position - basePos) + initPos;
+            var newRot = initRot * Quaternion.Inverse(baseRot) * orientation;
 
-                if (i != response.plan.poses.Length - 1)
-                {
-                    controller.TeleportRobot(newPos, newRot);
+            controller.TeleportRobot(newPos, newRot);
 
-                    // Wait interval for holo path animation
-                    yield return new WaitForSeconds(0.025f);
-                }
-                else if (i == response.plan.poses.Length - 1)
-                {
-                    var diff = newPos - initPos;
-                    //posDiff = new Vector3(diff.x, diff.y, diff.z);
-                }
-                i++;
-            }
+            // Wait interval for holo path animation
+            yield return new WaitForSeconds(0.03f);
         }
     }
 
     // On navigation complete, update robot's pose for coherent visualization
-    public void NavTargetCallback(MoveBaseActionResultMsg msg)
+    public void NavigationTargetReachedCallback(MoveBaseActionResultMsg msg)
     {
-        //Debug.Log(msg.status.text);
-
         var request = new PoseServiceRequest();
-        ros.SendServiceMessage<PoseServiceResponse>(baseLinkPoseService, request, UpdateRobotPoseOnTargetReached);
+        ros.SendServiceMessage<PoseServiceResponse>(baseFootprintPoseService, request, UpdateRobotPoseOnTargetReached);
     }
 
     public void UpdateRobotPoseOnTargetReached(PoseServiceResponse response)
@@ -243,10 +174,6 @@ public class TiagoROSInterface : MonoBehaviour
 
         // re-enable gravity 
         tiago.GetComponent<UrdfRobot>().SetRigidbodiesUseGravity();
-
-        // Set target for navigation active again in front of the robot's base
-        navTarget.SetActive(true);
-        navTarget.transform.localPosition = new Vector3(0, 0, 0.5f);
     }
 
     // -------------------------------------
@@ -255,6 +182,7 @@ public class TiagoROSInterface : MonoBehaviour
     public void PlanHandoverMotion(string arm)
     {
         var handoverPos = arm == "left" ? leftHandoverPos : rightHandoverPos;
+        var plannerSrv = arm == "left" ? leftGroupMotionPlannerSrv : rightGroupMotionPlannerSrv;
 
         // Convert from Unity to ROS coordinates 
         var rosHandoverPos = new Point();
@@ -265,7 +193,7 @@ public class TiagoROSInterface : MonoBehaviour
         var request = controller.PlanningRequest(arm, "handover", rosHandoverPos, null, new V3(1, 0, 0));
 
         // Send request to plan handover and set controller to busy, to wait for completion of holographic motion 
-        ros.SendServiceMessage<ActionServiceResponse>("/" + arm + "_group/tiago_unity_motion_planner", request, controller.PlanningServiceResponse);
+        ros.SendServiceMessage<ActionServiceResponse>(plannerSrv, request, controller.PlanningServiceResponse);
         StartCoroutine(SpawnInteractableOnMovementCompletion(arm, 0)); 
     }
 

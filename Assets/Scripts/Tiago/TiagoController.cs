@@ -336,7 +336,7 @@ public class TiagoController : MonoBehaviour
         var gripper = lastArmActionPlanned == "left" ? leftGripper : rightGripper;
         var articulationBody = lastArmActionPlanned == "left" ? leftArmArticulationBodies : rightArmArticulationBodies;
         CloseGripper(gripper);
-        StartCoroutine(RenderHolographicTrajectory(lastActionResponse.planned_action.return_trajectory, articulationBody, Mathf.RoundToInt(steps / 2)));
+        StartCoroutine(RenderHolographicTrajectory(lastActionResponse.planned_action.return_trajectory, articulationBody, steps));
 
     }
 }
