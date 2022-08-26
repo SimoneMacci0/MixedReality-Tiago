@@ -6,6 +6,7 @@ using System.Linq;
 
 using Point = RosMessageTypes.Geometry.PointMsg;
 using V3 = RosMessageTypes.Geometry.Vector3Msg;
+using Bool = RosMessageTypes.Std.BoolMsg;
 
 public class TiagoController : MonoBehaviour
 {
@@ -290,6 +291,7 @@ public class TiagoController : MonoBehaviour
     private IEnumerator RenderFullHolographicAction(PlannedActionWithTypeAndArmMsg action)
     {
         var armArticulationBodies = action.planning_arm == "left" ? leftArmArticulationBodies : rightArmArticulationBodies;
+        var gripperArticulationBody = action.planning_arm == "left" ? leftGripper : rightGripper;
 
         // Pre-grasp trajectory is always rendered
         if(action.action_type != "handover")
@@ -303,8 +305,10 @@ public class TiagoController : MonoBehaviour
         if (action.action_type != "handover")
         {
             yield return RenderHolographicTrajectory(action.planned_action.grasp_trajectory, armArticulationBodies, steps);
+            CloseGripper(gripperArticulationBody);
             yield return RenderHolographicTrajectory(action.planned_action.move_trajectory, armArticulationBodies, steps);
             yield return RenderHolographicTrajectory(action.planned_action.place_trajectory, armArticulationBodies, steps);
+            OpenGripper(gripperArticulationBody);
             yield return RenderHolographicTrajectory(action.planned_action.return_trajectory, armArticulationBodies, Mathf.RoundToInt(steps / 2));
         }
         // Action complete, controller no more busy
@@ -358,10 +362,12 @@ public class TiagoController : MonoBehaviour
         }
     }
 
+    // Routine to complete handover, namely robot grasps the item offered by human and goes to transport joint configuration
     public void CompleteHandover()
     {
         var gripper = lastArmActionPlanned == "left" ? leftGripper : rightGripper;
         var articulationBody = lastArmActionPlanned == "left" ? leftArmArticulationBodies : rightArmArticulationBodies;
+
         CloseGripper(gripper);
         StartCoroutine(RenderHolographicTrajectory(lastActionPlanned.return_trajectory, articulationBody, steps));
 

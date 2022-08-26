@@ -10,6 +10,7 @@ using Unity.Robotics.ROSTCPConnector.ROSGeometry;
 using PoseStamped = RosMessageTypes.Geometry.PoseStampedMsg;
 using PointMsg = RosMessageTypes.Geometry.Point32Msg;
 using Path = RosMessageTypes.Nav.PathMsg;
+using Bool = RosMessageTypes.Std.BoolMsg;
 
 public class TiagoROSInterface : MonoBehaviour
 {
@@ -27,6 +28,7 @@ public class TiagoROSInterface : MonoBehaviour
     private string rightGroupMotionPlannerSrv = "/right_group/plan_action";
 
     private string plannedActionTopic = "/planned_action";
+    private string handoverTriggeredTopic = "/handover_triggered";
 
     // Tiago Reference
     public GameObject tiago;
@@ -97,9 +99,10 @@ public class TiagoROSInterface : MonoBehaviour
         controller.Initialize(tiago, baseLink, steps);
 
         // Register various topics and services from ROS 
-        ros.Subscribe<Path>(navigationPathTopic, NavigationPlanCallback);
-        ros.Subscribe<MoveBaseActionResultMsg>(navigationTargetReachedTopic, NavigationTargetReachedCallback);
-        ros.Subscribe<PlannedActionWithTypeAndArmMsg>(plannedActionTopic, controller.ActionPlanningServiceResponse);
+        ros.Subscribe<Path>(navigationPathTopic, OnNavigationPlanReceived);
+        ros.Subscribe<MoveBaseActionResultMsg>(navigationTargetReachedTopic, OnNavigationTargetReached);
+        ros.Subscribe<PlannedActionWithTypeAndArmMsg>(plannedActionTopic, OnActionPlanReceived);
+        ros.Subscribe<Bool>(handoverTriggeredTopic, OnHandoverTriggered);
 
         ros.RegisterRosService<PoseServiceRequest, PoseServiceResponse>(baseFootprintPoseService);
         ros.RegisterRosService<JointStateServiceRequest, JointStateServiceResponse>(jointStateService);
@@ -115,6 +118,7 @@ public class TiagoROSInterface : MonoBehaviour
     // -------------------------------------
     // METHODS RELATED TO ROBOT'S MOBILE BASE AND HOLOGRAPHIC NAVIGATION
 
+
     // Update robot's base_footprint pose with respect to ROS map frame
     public void BaseLinkPoseServiceResponse(PoseServiceResponse response)
     {
@@ -126,8 +130,14 @@ public class TiagoROSInterface : MonoBehaviour
     }
 
     // Callback function called whenever a navigation plan has been received
-    public void NavigationPlanCallback(Path path)
+    public void OnNavigationPlanReceived(Path path)
     {
+        // Disable interactable objects whenever robot moves to a new location
+        foreach(GameObject interactable in interactables)
+        {
+            interactable.SetActive(false);
+        }
+
         if (path != null)
         {
             StartCoroutine(HoloNavigationRoutine(path));
@@ -164,7 +174,7 @@ public class TiagoROSInterface : MonoBehaviour
     }
 
     // On navigation complete, update robot's pose for coherent visualization
-    public void NavigationTargetReachedCallback(MoveBaseActionResultMsg msg)
+    public void OnNavigationTargetReached(MoveBaseActionResultMsg msg)
     {
         var request = new PoseServiceRequest();
         ros.SendServiceMessage<PoseServiceResponse>(baseFootprintPoseService, request, UpdateRobotPoseOnTargetReached);
@@ -186,40 +196,38 @@ public class TiagoROSInterface : MonoBehaviour
     // -------------------------------------
     // METHODS RELATED TO ROBOT'S UPPER LIMBS MOVEMENTS AND MOTION PLANNING
 
-    public void PlanHandoverMotion(string arm)
+
+    // Callback function invoked whenever a new action has been planned by MoveIt and needs to be holo-rendered
+    public void OnActionPlanReceived(PlannedActionWithTypeAndArmMsg action)
     {
-        /*var handoverPos = arm == "left" ? leftHandoverPos : rightHandoverPos;
-        var plannerSrv = arm == "left" ? leftGroupMotionPlannerSrv : rightGroupMotionPlannerSrv;
-
-        // Convert from Unity to ROS coordinates 
-        var rosHandoverPos = new Point();
-        rosHandoverPos.x = handoverPos.transform.localPosition.z;
-        rosHandoverPos.y = -handoverPos.transform.localPosition.x;
-        rosHandoverPos.z = handoverPos.transform.localPosition.y;
-
-        var request = controller.PlanningRequest(arm, "handover", rosHandoverPos, null, new V3(1, 0, 0));
-
-        // Send request to plan handover and set controller to busy, to wait for completion of holographic motion 
-        ros.SendServiceMessage<ActionServiceResponse>(plannerSrv, request, controller.PlanningServiceResponse);
-        StartCoroutine(SpawnInteractableOnMovementCompletion(arm, 0)); */
+        if (action.action_type == "handover")
+        {
+            StartCoroutine(SpawnInteractableOnMovementCompletion(action.planning_arm, 0));
+        }
+        controller.ActionPlanningServiceResponse(action);
     }
 
+    // Internal routine to spawn holographic object after completion of the robot's action
     private IEnumerator SpawnInteractableOnMovementCompletion(string arm, int idx)
     {
+        // Set busy variable to true and wait for completion of holographic action
         controller.busy = true;
         while (controller.busy)
         {
             yield return new WaitForSeconds(0.25f);
         }
+
+        // Spawn holographic item at its expected pose for subsequent handover phase with human
         var graspingFrame = arm == "left" ? leftGraspingFrame : rightGraspingFrame;
+
         interactables[idx].SetActive(true);
         interactables[idx].transform.SetPositionAndRotation(leftGraspingFrame.transform.position + graspOffset * Vector3.back, Quaternion.identity);
     }
 
-    public void OnHandoverDetected()
+    // Callback function invoked when Digital Twin signal that human wants to perform handover with robot
+    public void OnHandoverTriggered(Bool msg)
     {
+        // Call internal routine which completes the handover phase
         controller.CompleteHandover();
-    }
-
-
+    } 
 }
