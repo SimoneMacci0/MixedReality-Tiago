@@ -19,6 +19,9 @@ public class TiagoController : MonoBehaviour
     private ArticulationBody[] rightArmArticulationBodies;
     private ArticulationBody[] rightGripper;
     private ArticulationBody torsoArticulationBody;
+    private int[] leftArmIndices = { 0, 1, 2, 3, 4, 5, 6 }; 
+    private int[] rightArmIndices = { 7, 8, 9, 10, 11, 12, 13 };
+    private int torsoIndex = 20;
 
     // Variables for trajectory execution
     private string lastArmActionPlanned = "";
@@ -38,6 +41,7 @@ public class TiagoController : MonoBehaviour
         GetRobotReference();
     }
 
+    // Initial routine to obtain reference to all objects in the scene needed to drive the motion of the holographic robot
     private void GetRobotReference()
     {
         string base_link = "base_footprint/base_link";
@@ -106,11 +110,9 @@ public class TiagoController : MonoBehaviour
         rightGripper[0] = tiago.transform.Find(right_gripper_left_finger).GetComponent<ArticulationBody>();
         rightGripper[1] = tiago.transform.Find(right_gripper_right_finger).GetComponent<ArticulationBody>();
 
-        MoveToRestPosition();
-
     }
 
-    // Routine to teleport the robot's base_link to a new gobal pose
+    // Routine to teleport the robot's base_link to a new gobal pose, expressed via position and rotation
     public void TeleportRobot(Vector3 position, Quaternion rotation)
     {
         base_link.GetComponent<ArticulationBody>().TeleportRoot(position, rotation);
@@ -122,7 +124,7 @@ public class TiagoController : MonoBehaviour
         base_link.GetComponent<ArticulationBody>().TeleportRoot(position, base_link.transform.rotation);
     }
 
-    // Functions to close and open the robot's gripper
+    // Methods to close and open the robot's gripper
     public void CloseGripper(ArticulationBody[] gripper)
     {
         var leftDrive = gripper[0].xDrive;
@@ -153,28 +155,49 @@ public class TiagoController : MonoBehaviour
      * Can be set up in order to copy the real robot's configuration if connected
      */
 
-    public void MoveToRestPosition()
+    public void JointStateServiceResponse(JointStateServiceResponse response)
     {
-        StartCoroutine(MoveArmToRestRoutine(leftArmArticulationBodies, leftGripper));
-        StartCoroutine(MoveArmToRestRoutine(rightArmArticulationBodies, rightGripper));
-        StartCoroutine(MoveTorsoToRestRoutine(0.01f));
+        if (response != null && response.robot_state.name.Length > 2)
+        {
+            MoveToRestPosition(response);
+        }
+    }
+
+    public void MoveToRestPosition(JointStateServiceResponse response)
+    {
+        var left_arm_joint_values = new float[7];
+        var right_arm_joint_values = new float[7];
+
+        // Extract the joint values for both arms from the service response message, using the hard-coded indices known from Tiago's /joint_states topic
+        for(int i=0; i<leftArmIndices.Length; i++)
+        {
+            left_arm_joint_values[i] = Mathf.Rad2Deg * (float)response.robot_state.position[leftArmIndices[i]];
+            right_arm_joint_values[i] = Mathf.Rad2Deg * (float)response.robot_state.position[rightArmIndices[i]];
+        }
+
+        // Call the internal routines to drive both arms and torso to their target joint values
+        StartCoroutine(MoveArmToRestRoutine(leftArmArticulationBodies, left_arm_joint_values, leftGripper));
+        StartCoroutine(MoveArmToRestRoutine(rightArmArticulationBodies, right_arm_joint_values, rightGripper));
+        StartCoroutine(MoveTorsoToRestRoutine((float)response.robot_state.position[torsoIndex]));
     }
     
-    private IEnumerator MoveArmToRestRoutine(ArticulationBody[] armArticulationBody, ArticulationBody[] gripperArticulationBody)
+    /* Internal routine for moving one robot arm to a given joint configuration
+     * Params:
+     *      - The arm articulation body, represented as an array of ArticulationBody objects;
+     *      - The target values for the joints of the arm, given as array of floats and expressed in degrees;
+     *      - The gripper articulation body, so that the respective gripper can be set to default configuration (open).
+     */
+    private IEnumerator MoveArmToRestRoutine(ArticulationBody[] armArticulationBody, float[] target_config, ArticulationBody[] gripperArticulationBody)
     {
-        float[] target = { -1.1f, 1.469f, 2.721f, 1.717f, -1.567f, 1.385f, 0.0f };
         float[] lastJointState = { 0, 0, 0, 0, 0, 0, 0 };
-        var steps = 100;
-        for (int i = 0; i < armArticulationBody.Length; i++)
-        {
-            target[i] = Mathf.Rad2Deg * (float)target[i];
-        }
+        var steps = 200;
+
         for (int i = 0; i <= steps; i++)
         {
             for (int joint = 0; joint < armArticulationBody.Length; joint++)
             {
                 var joint1XDrive = armArticulationBody[joint].xDrive;
-                joint1XDrive.target = lastJointState[joint] + (target[joint] - lastJointState[joint]) * (float)(1.0f / steps) * (float)i;
+                joint1XDrive.target = lastJointState[joint] + (target_config[joint] - lastJointState[joint]) * (float)(1.0f / steps) * (float)i;
                 armArticulationBody[joint].xDrive = joint1XDrive;
             }
 
@@ -185,7 +208,7 @@ public class TiagoController : MonoBehaviour
 
     private IEnumerator MoveTorsoToRestRoutine(float target)
     {
-        var steps = 1;
+        var steps = 100;
         var torsoDrive = torsoArticulationBody.xDrive;
         var lastTorsoValue = torsoDrive.target;
         for (int i = 0; i <= steps; i++)

@@ -9,8 +9,6 @@ using Unity.Robotics.ROSTCPConnector.ROSGeometry;
 
 using PoseStamped = RosMessageTypes.Geometry.PoseStampedMsg;
 using PointMsg = RosMessageTypes.Geometry.Point32Msg;
-using Point = RosMessageTypes.Geometry.PointMsg;
-using V3 = RosMessageTypes.Geometry.Vector3Msg;
 using Path = RosMessageTypes.Nav.PathMsg;
 
 public class TiagoROSInterface : MonoBehaviour
@@ -20,6 +18,7 @@ public class TiagoROSInterface : MonoBehaviour
 
     // ROS topics and services names
     private string baseFootprintPoseService = "/base_footprint_pose_service";
+    private string jointStateService = "/joint_state_service";
 
     private string navigationPathTopic = "/navigation_plan";
     private string navigationTargetReachedTopic = "/move_base/result";
@@ -70,15 +69,17 @@ public class TiagoROSInterface : MonoBehaviour
         yield return new WaitForSeconds(0.5f);
     }
 
+    // Method to spawn the robot in place the first time the QR marker is detected
     public void SpawnScene()
     {
         StartCoroutine(SpawnSceneRoutine());
     }
 
+    // Internal routine to spawn robot
     private IEnumerator SpawnSceneRoutine()
     {
         var markerPosition = marker.transform.position;
-        //imageTarget.GetComponent<ImageTargetBehaviour>().enabled = false;
+        // Disable marker behavior so that continuous tracking is disabled
         marker.GetComponent<Behaviour>().enabled = false;
         marker.SetActive(false);
 
@@ -89,7 +90,7 @@ public class TiagoROSInterface : MonoBehaviour
         // Initialize robot controller
         controller = gameObject.AddComponent<TiagoController>();
 
-        // Wait 1 second for correct initialization of the gameobject
+        // Wait 1 second for correct initialization of the controller script
         yield return new WaitForSeconds(1.0f);
 
         // Init controller with sim values
@@ -101,18 +102,20 @@ public class TiagoROSInterface : MonoBehaviour
         ros.Subscribe<PlannedActionWithTypeAndArmMsg>(plannedActionTopic, controller.ActionPlanningServiceResponse);
 
         ros.RegisterRosService<PoseServiceRequest, PoseServiceResponse>(baseFootprintPoseService);
+        ros.RegisterRosService<JointStateServiceRequest, JointStateServiceResponse>(jointStateService);
         ros.RegisterRosService<ActionServiceRequest, ActionServiceResponse>(leftGroupMotionPlannerSrv);
         ros.RegisterRosService<ActionServiceRequest, ActionServiceResponse>(rightGroupMotionPlannerSrv);
 
         // Send request to get initial robot's pose
-        var request = new PoseServiceRequest();
-        ros.SendServiceMessage<PoseServiceResponse>(baseFootprintPoseService, request, BaseLinkPoseServiceResponse);
+        ros.SendServiceMessage<PoseServiceResponse>(baseFootprintPoseService, new PoseServiceRequest(), BaseLinkPoseServiceResponse);
+        ros.SendServiceMessage<JointStateServiceResponse>(jointStateService, new JointStateServiceRequest(), controller.JointStateServiceResponse);
     }
+
 
     // -------------------------------------
     // METHODS RELATED TO ROBOT'S MOBILE BASE AND HOLOGRAPHIC NAVIGATION
 
-    // Update robot's base_link pose with respect to ROS map frame
+    // Update robot's base_footprint pose with respect to ROS map frame
     public void BaseLinkPoseServiceResponse(PoseServiceResponse response)
     {
         basePos = new PointMsg(
@@ -133,6 +136,7 @@ public class TiagoROSInterface : MonoBehaviour
             Debug.Log("Empty path message received");
     }
 
+    // Internal routine that renders the navigation plan as holographic animation
     private IEnumerator HoloNavigationRoutine(Path path)
     {
         // Disable urdf robot gravity for teleporting smoothly
@@ -177,6 +181,7 @@ public class TiagoROSInterface : MonoBehaviour
         // re-enable gravity 
         tiago.GetComponent<UrdfRobot>().SetRigidbodiesUseGravity();
     }
+
 
     // -------------------------------------
     // METHODS RELATED TO ROBOT'S UPPER LIMBS MOVEMENTS AND MOTION PLANNING
