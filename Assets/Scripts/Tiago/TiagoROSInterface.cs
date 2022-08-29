@@ -57,6 +57,8 @@ public class TiagoROSInterface : MonoBehaviour
     public int delay;
 
     // Other variables
+    private float depthOffset = 0.04f;
+    private float heightOffset = 0.03f;
     private Vector3 basePos;
     private Quaternion baseRot;
 
@@ -85,7 +87,7 @@ public class TiagoROSInterface : MonoBehaviour
         marker.GetComponent<Behaviour>().enabled = false;
         marker.SetActive(false);
 
-        var spawnPosition = /*imTargetPosition + Vector3.forward * depthOffset - Vector3.up * heightOffset*/ markerPosition;
+        var spawnPosition = markerPosition + Vector3.forward * depthOffset + Vector3.down * heightOffset;
         scene.transform.SetPositionAndRotation(spawnPosition, Quaternion.identity);
         scene.SetActive(true);
 
