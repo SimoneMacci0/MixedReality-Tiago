@@ -11,6 +11,8 @@ using PoseStamped = RosMessageTypes.Geometry.PoseStampedMsg;
 using PointMsg = RosMessageTypes.Geometry.Point32Msg;
 using Path = RosMessageTypes.Nav.PathMsg;
 using Bool = RosMessageTypes.Std.BoolMsg;
+using Empty = RosMessageTypes.Std.EmptyMsg;
+using Microsoft.MixedReality.Toolkit.Input;
 
 public class TiagoROSInterface : MonoBehaviour
 {
@@ -29,6 +31,8 @@ public class TiagoROSInterface : MonoBehaviour
 
     private string plannedActionTopic = "/planned_action";
     private string handoverTriggeredTopic = "/handover_triggered";
+
+    private string keepAliveTopic = "/keep_connection_alive";
 
     // Tiago Reference
     public GameObject tiago;
@@ -65,6 +69,11 @@ public class TiagoROSInterface : MonoBehaviour
 
     IEnumerator Start()
     {
+        // Disable rays and pointers to maximize user experience
+        PointerUtils.SetHandRayPointerBehavior(PointerBehavior.AlwaysOff);
+        PointerUtils.SetGazePointerBehavior(PointerBehavior.AlwaysOff);
+        PointerUtils.SetHandPokePointerBehavior(PointerBehavior.AlwaysOff);
+
         // Get connection instance to ROS
         ros = ROSConnection.GetOrCreateInstance();
         // Disable listening to TF messages for HoloLens performance optimization
@@ -105,6 +114,7 @@ public class TiagoROSInterface : MonoBehaviour
         ros.Subscribe<MoveBaseActionResultMsg>(navigationTargetReachedTopic, OnNavigationTargetReached);
         ros.Subscribe<PlannedActionWithTypeAndArmMsg>(plannedActionTopic, OnActionPlanReceived);
         ros.Subscribe<Bool>(handoverTriggeredTopic, OnHandoverTriggered);
+        ros.Subscribe<Empty>(keepAliveTopic, onEmptyMsg);
 
         ros.RegisterRosService<PoseServiceRequest, PoseServiceResponse>(baseFootprintPoseService);
         ros.RegisterRosService<JointStateServiceRequest, JointStateServiceResponse>(jointStateService);
@@ -116,6 +126,10 @@ public class TiagoROSInterface : MonoBehaviour
         ros.SendServiceMessage<JointStateServiceResponse>(jointStateService, new JointStateServiceRequest(), controller.JointStateServiceResponse);
     }
 
+    private void onEmptyMsg(Empty msg)
+    {
+        // do nothing
+    }
 
     // -------------------------------------
     // METHODS RELATED TO ROBOT'S MOBILE BASE AND HOLOGRAPHIC NAVIGATION
@@ -171,7 +185,7 @@ public class TiagoROSInterface : MonoBehaviour
             controller.TeleportRobot(newPos, newRot);
 
             // Wait interval for holo path animation
-            yield return new WaitForSeconds(0.03f);
+            yield return new WaitForSeconds(0.05f);
         }
     }
 
@@ -218,12 +232,14 @@ public class TiagoROSInterface : MonoBehaviour
         {
             yield return new WaitForSeconds(0.25f);
         }
+        yield return new WaitForSeconds(1.0f);
 
         // Spawn holographic item at its expected pose for subsequent handover phase with human
         var graspingFrame = arm == "left" ? leftGraspingFrame : rightGraspingFrame;
 
         interactables[idx].SetActive(true);
-        interactables[idx].transform.SetPositionAndRotation(leftGraspingFrame.transform.position + graspOffset * Vector3.back, Quaternion.identity);
+        interactables[idx].transform.parent = graspingFrame.transform;
+        interactables[idx].transform.localPosition = new Vector3(0, 0, graspOffset);
     }
 
     // Callback function invoked when Digital Twin signal that human wants to perform handover with robot

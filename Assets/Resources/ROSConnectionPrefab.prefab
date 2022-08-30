@@ -46,9 +46,9 @@ MonoBehaviour:
   m_RosIPAddress: 130.251.13.166
   m_RosPort: 10000
   m_ConnectOnStart: 1
-  m_KeepaliveTime: 1000000
-  m_NetworkTimeoutSeconds: 1000000
-  m_SleepTimeSeconds: 0.25
+  m_KeepaliveTime: 9999
+  m_NetworkTimeoutSeconds: 9999
+  m_SleepTimeSeconds: 0.5
   m_ShowHUD: 1
   m_TFTopics:
   - /tf
