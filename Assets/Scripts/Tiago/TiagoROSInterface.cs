@@ -65,6 +65,7 @@ public class TiagoROSInterface : MonoBehaviour
     private float heightOffset = 0.03f;
     private Vector3 basePos;
     private Quaternion baseRot;
+    private Vector3 posDiff;
 
 
     IEnumerator Start()
@@ -172,6 +173,7 @@ public class TiagoROSInterface : MonoBehaviour
         var initPos = baseLink.transform.position;
         var initRot = baseLink.transform.rotation;
 
+        int i = 0;
         foreach (PoseStamped ps in path.poses)
         {
             // Get i-th navigation point from the overall path
@@ -185,7 +187,14 @@ public class TiagoROSInterface : MonoBehaviour
             controller.TeleportRobot(newPos, newRot);
 
             // Wait interval for holo path animation
-            yield return new WaitForSeconds(0.05f);
+            yield return new WaitForSeconds(0.025f);
+
+            if(i == path.poses.Length - 1)
+            {
+                var diff = newPos - initPos;
+                posDiff = new Vector3(diff.x, diff.y, diff.z);
+            }
+            i++;
         }
     }
 
@@ -198,11 +207,21 @@ public class TiagoROSInterface : MonoBehaviour
 
     public void UpdateRobotPoseOnTargetReached(PoseServiceResponse response)
     {
-        basePos = new PointMsg(
+        var oldBasePos = basePos;
+
+        var newBasePos = new PointMsg(
             (float)response.base_link_pose.position.x,
             (float)response.base_link_pose.position.y,
             (float)response.base_link_pose.position.z).From<FLU>();
-        baseRot = response.base_link_pose.orientation.From<FLU>();
+        var newBaseRot = response.base_link_pose.orientation.From<FLU>();
+
+        var baseDiff = baseLink.transform.rotation * Quaternion.Inverse(newBaseRot) * (newBasePos - oldBasePos) - posDiff;
+        var newPos = baseLink.transform.position + baseDiff;
+        
+        controller.TeleportRobotPosition(newPos);
+
+        basePos = newBasePos;
+        baseRot = newBaseRot;
 
         // re-enable gravity 
         tiago.GetComponent<UrdfRobot>().SetRigidbodiesUseGravity();

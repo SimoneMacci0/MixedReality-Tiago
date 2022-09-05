@@ -48,7 +48,7 @@ MonoBehaviour:
   m_ConnectOnStart: 1
   m_KeepaliveTime: 9999
   m_NetworkTimeoutSeconds: 9999
-  m_SleepTimeSeconds: 0.5
+  m_SleepTimeSeconds: 1
   m_ShowHUD: 1
   m_TFTopics:
   - /tf
